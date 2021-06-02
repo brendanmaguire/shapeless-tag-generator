@@ -1,0 +1,95 @@
+#!/usr/bin/env python3
+
+import textwrap
+from typing import (
+    List,
+    Tuple,
+    Union,
+)
+
+import click
+
+
+def _generate_code(tag_name: str, tag_type: str) -> str:
+    tag = f'{tag_name}Tag'
+    lowercase_tag_name = tag_name[0].lower() + tag_name[1:]
+
+    return textwrap.dedent(
+        f'''
+        sealed trait {tag}
+        type {tag_name} = {tag_type} @@ {tag}
+
+        object {tag_name} {{
+          def apply({lowercase_tag_name}: {tag_type}): {tag_name} =
+            tag[{tag}][{tag_type}]({lowercase_tag_name})
+        }}'''
+    )
+
+
+def _extract_tag_name_and_type(tag: str) -> Tuple[str, str]:
+    try:
+        tag_name, tag_type = tag.strip().split(':')
+    except ValueError:
+        raise click.BadParameter(f'Invalid tag: "{tag}"')
+
+    if not tag_name or not tag_type:
+        raise click.BadParameter(
+            "Tagged type and name must not be empty strings. ' +"
+            f"Problem tag: '{tag}'"
+        )
+
+    if not tag_name.isalnum() or not tag_type.isalnum():
+        raise click.BadParameter(
+            f"Tagged type and name must be alphanumeric. Problem tag: '{tag}'"
+        )
+
+    if not tag_name[0].isupper() or not tag_type[0].isupper():
+        raise click.BadParameter(
+            "Tagged type and name must start with capital letters. " +
+            f"Problem tag: '{tag}'"
+        )
+
+    return (tag_name, tag_type)
+
+
+def _validate_tags(_, __, values: str) -> Union[None, List[Tuple[str, str]]]:
+    if not values:
+        return None
+
+    return [_extract_tag_name_and_type(value) for value in values.split(' ')]
+
+
+@click.command()
+@click.pass_context
+@click.option(
+    '--tags',
+    callback=_validate_tags,
+    help=f'A list of tags separated by whitespace'
+)
+@click.option(
+    '--tags-file',
+    type=click.File('r'),
+    help=f'A file containing a tag definition per line'
+)
+def main(ctx, tags: List[Tuple[str, str]], tags_file):
+    """
+    A program that generates shapeless tagged types and constructors from a
+    list of input tag definitions
+
+    Tags should be formatted as "TagName:TagType" - example: "UserId:String"
+    """
+    if tags is not None:
+        _tags = tags
+    elif tags_file is not None:
+        _tags = [_extract_tag_name_and_type(tag_str) for tag_str in tags_file]
+    else:
+        print(ctx.get_help())
+        return
+
+    for tag in _tags:
+        tag_name, tag_type = tag
+        print(_generate_code(tag_name, tag_type))
+
+
+if __name__ == '__main__':
+    main()
